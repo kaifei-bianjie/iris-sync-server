@@ -1,11 +1,9 @@
 package handler
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/irisnet/irishub-sync/types"
 	"github.com/irisnet/irishub-sync/util/helper"
-	"sort"
+	"github.com/tendermint/tendermint/types"
 	"testing"
 )
 
@@ -33,46 +31,85 @@ func TestCompareAndUpdateValidators(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			CompareAndUpdateValidators()
+			CompareAndUpdateValidators(tt.args.tmVals)
 		})
 	}
 }
 
-type Person struct {
-	Name string
-	Age  int
-}
-
-func (p Person) String() string {
-	return fmt.Sprintf("%s: %d", p.Name, p.Age)
-}
-
-func TestSort(t *testing.T) {
-	people := []Person{
-		{"Bob", 31},
-		{"John", 42},
-		{"Michael", 17},
-		{"Jenny", 26},
+func Test_compareSlice(t *testing.T) {
+	type args struct {
+		a []string
+		b []string
 	}
-
-	sort.SliceStable(people, func(i, j int) bool {
-		return people[i].Age > people[j].Age
-	})
-	fmt.Println(people)
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "test compare two slice: lenght not equal",
+			args: args{
+				a: nil,
+				b: []string{"2", "3"},
+			},
+		},
+		{
+			name: "test compare two slice: contain empty",
+			args: args{
+				a: []string{"1", "2", "3"},
+				b: []string{"2", "3", ""},
+			},
+		},
+		{
+			name: "test compare two slice: element not equal",
+			args: args{
+				a: []string{"1", "2", "3"},
+				b: []string{"2", "3", "4"},
+			},
+		},
+		{
+			name: "test compare two slice: equal",
+			args: args{
+				a: []string{"1", "2", "3"},
+				b: []string{"2", "3", "1"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := compareSlice(tt.args.a, tt.args.b)
+			fmt.Println(res)
+		})
+	}
 }
 
-func TestBuildUnbondingDelegation(t *testing.T) {
-	var delAddr = "faa1ljemm0yznz58qxxs8xyak7fashcfxf5lssn6jm"
-	var valAddr = "fva1kca5vw7r2k72d5zy0demszmrhdz4dp8t4uat0c"
-	res := BuildUnbondingDelegation(delAddr, valAddr)
-	r, _ := json.Marshal(res)
-	fmt.Println(string(r))
-}
-
-func TestBuildDelegation(t *testing.T) {
-	var delAddr = "faa1ljemm0yznz58qxxs8xyak7fashcfxf5lssn6jm"
-	var valAddr = "fva1kca5vw7r2k72d5zy0demszmrhdz4dp8t4uat0c"
-	res := BuildDelegation(delAddr, valAddr)
-	r, _ := json.Marshal(res)
-	fmt.Println(string(r))
+func Test_sliceContains(t *testing.T) {
+	type args struct {
+		s []string
+		e string
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "test slice contain",
+			args: args{
+				s: []string{"1", "2"},
+				e: "1",
+			},
+		},
+		{
+			name: "test slice not contain",
+			args: args{
+				s: []string{"1", "2"},
+				e: "1.1",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := sliceContains(tt.args.s, tt.args.e)
+			fmt.Println(res)
+		})
+	}
 }

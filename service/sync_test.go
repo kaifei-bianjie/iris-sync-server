@@ -6,7 +6,7 @@ import (
 
 	conf "github.com/irisnet/irishub-sync/conf/server"
 
-	"github.com/irisnet/irishub-sync/logger"
+	"github.com/irisnet/irishub-sync/module/logger"
 	"sync"
 )
 
@@ -22,10 +22,11 @@ func TestStart(t *testing.T) {
 	for i := 1; i <= goroutineNum; i++ {
 		limitChan <- i
 		go func(goroutineNum int, ch chan int) {
-			logger.Info("release limitChan")
+			logger.Info.Println("release limitChan")
 			<-limitChan
 			defer func() {
-				logger.Info("%v goroutine send data to channel")
+				logger.Info.Printf("%v goroutine send data to channel\n",
+					goroutineNum)
 				ch <- goroutineNum
 			}()
 
@@ -36,9 +37,9 @@ func TestStart(t *testing.T) {
 		select {
 		case <-unBufferChan:
 			activeGoroutineNum = activeGoroutineNum - 1
-			logger.Info("active goroutine num is %v")
+			logger.Info.Printf("active goroutine num is %v", activeGoroutineNum)
 			if activeGoroutineNum == 0 {
-				logger.Info("All goroutine complete")
+				logger.Info.Println("All goroutine complete")
 				break
 			}
 		}
@@ -52,10 +53,10 @@ func Test_startCron(t *testing.T) {
 
 	c := cron.New()
 	c.AddFunc(conf.CronCalculateUpTime, func() {
-		logger.Info("every one minute execute code")
+		logger.Info.Println("every one minute execute code")
 	})
 	c.AddFunc(conf.CronCalculateTxGas, func() {
-		logger.Info("every five minute execute code")
+		logger.Info.Println("every five minute execute code")
 	})
 	go c.Start()
 

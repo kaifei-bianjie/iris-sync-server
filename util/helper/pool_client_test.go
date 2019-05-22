@@ -4,12 +4,12 @@
 package helper
 
 import (
-	"context"
-	"fmt"
-	"github.com/tendermint/tendermint/types"
 	"testing"
 
-	"github.com/irisnet/irishub-sync/logger"
+	"github.com/tendermint/tendermint/rpc/client"
+
+	conf "github.com/irisnet/irishub-sync/conf/server"
+	"github.com/irisnet/irishub-sync/module/logger"
 )
 
 func TestInitClientPool(t *testing.T) {
@@ -19,29 +19,37 @@ func TestInitClientPool(t *testing.T) {
 		b[index] = value
 	}
 	b[3] = 4
+	logger.Info.Println(b)
 }
 
 func TestGetClient(t *testing.T) {
-	client := GetClient()
-	fmt.Println("====1======")
-	defer func() {
-		fmt.Println("====3======")
-		if err := recover(); err != nil {
-			logger.Debug("debug=======================recover=======================debug")
-		}
-	}()
-	_, err := client.Status()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println("====4======")
+	InitClientPool()
 
-	txEventsCh := make(chan interface{})
-	client.Start()
-	client.Subscribe(context.Background(), "xxx", types.EventQueryValidatorSetUpdates, txEventsCh)
-	for e := range txEventsCh {
-		edt := e.(types.EventDataValidatorSetUpdates)
-		fmt.Println(edt.ValidatorUpdates)
+	for i := 0; i < conf.InitConnectionNum+10; i++ {
+	}
+
+}
+
+func TestClient_Release(t *testing.T) {
+	type fields struct {
+		Client client.Client
+		used   bool
+		id     int64
+	}
+	tests := []struct {
+		name   string
+		fields fields
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := Client{
+				Client: tt.fields.Client,
+				used:   tt.fields.used,
+				id:     tt.fields.id,
+			}
+			n.Release()
+		})
 	}
 }
