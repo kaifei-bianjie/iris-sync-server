@@ -1,109 +1,88 @@
 package handler
 
 import (
-	"github.com/irisnet/irishub-sync/module/logger"
+	"github.com/irisnet/irishub-sync/logger"
 	"github.com/irisnet/irishub-sync/store"
 	"github.com/irisnet/irishub-sync/store/document"
 	"github.com/irisnet/irishub-sync/util/constant"
 	"github.com/irisnet/irishub-sync/util/helper"
-	"sync"
-	"time"
 )
 
-// save account
-func SaveAccount(docTx document.CommonTx, mutex sync.Mutex) {
+func SaveOrUpdateAccountBalanceInfo(accounts []string, height, timestamp int64) {
 	var (
-		address    string
-		updateTime time.Time
-		height     int64
-		methodName = "SaveAccount: "
+		accountModel document.Account
 	)
-	logger.Info.Printf("Start %v\n", methodName)
-
-	// save account
-	fun := func(address string, updateTime time.Time, height int64) {
-		account := document.Account{
-			Address: address,
-			Time:    updateTime,
-			Height:  height,
-		}
-
-		err := store.Save(account)
-
-		if err != nil && err.Error() != "Record exists" {
-			logger.Error.Printf("%v Record exists, account is %v, err is %s\n",
-				methodName, account.Address, err.Error())
-		}
-	}
-
-	txType := GetTxType(docTx)
-	if txType == "" {
-		logger.Error.Printf("%v get docTx type failed, docTx is %v\n",
-			methodName, docTx)
+	if len(accounts) == 0 {
 		return
 	}
 
-	switch txType {
-	case constant.TxTypeTransfer, constant.TxTypeStakeDelegate,
-		constant.TxTypeStakeBeginUnbonding, constant.TxTypeStakeCompleteUnbonding:
-		updateTime = docTx.Time
-		height = docTx.Height
+	for _, v := range accounts {
+		coins, accountNumber := helper.QueryAccountInfo(v)
+		coinIris := getCoinIrisFromCoins(coins)
 
-		fun(docTx.From, updateTime, height)
-		fun(docTx.To, updateTime, height)
-		break
-	case constant.TxTypeStakeCreateValidator, constant.TxTypeStakeEditValidator:
-		address = docTx.From
-		updateTime = docTx.Time
-		height = docTx.Height
-
-		fun(address, updateTime, height)
-		break
+		if err := accountModel.UpsertBalanceInfo(v, coinIris, accountNumber, height, timestamp); err != nil {
+			logger.Error("update account balance info fail", logger.Int64("height", height),
+				logger.String("address", v), logger.String("err", err.Error()))
+		}
 	}
-
-	logger.Info.Printf("End %v\n", methodName)
 }
 
-// update account balance
-func UpdateBalance(docTx document.CommonTx, mutex sync.Mutex) {
+func SaveOrUpdateAccountDelegationInfo(docTx document.CommonTx) {
 	var (
-		methodName = "UpdateBalance: "
+		delegator    string
+		accountModel document.Account
 	)
-	logger.Info.Printf("Start %v\n", methodName)
-
-	fun := func(address string) {
-		account, err := document.QueryAccount(address)
-		if err != nil {
-			logger.Error.Printf("%v updateAccountBalance failed, account is %v and err is %v",
-				methodName, account, err.Error())
-			return
-		}
-
-		// query balance of account
-		account.Amount = helper.QueryAccountBalance(address)
-		if err := store.Update(account); err != nil {
-			logger.Error.Printf("%v account:[%q] balance update failed,%s\n",
-				methodName, account.Address, err)
-		}
+	switch docTx.Type {
+	case constant.TxTypeStakeDelegate, constant.TxTypeStakeBeginUnbonding, constant.TxTypeBeginRedelegate:
+		delegator = docTx.From
 	}
-
-	txType := GetTxType(docTx)
-	if txType == "" {
-		logger.Error.Printf("%v get docTx type failed, docTx is %v\n",
-			methodName, docTx)
+	if delegator == "" {
 		return
 	}
-
-	switch txType {
-	case constant.TxTypeTransfer, constant.TxTypeStakeDelegate,
-		constant.TxTypeStakeBeginUnbonding, constant.TxTypeStakeCompleteUnbonding:
-		fun(docTx.From)
-		fun(docTx.To)
-		break
-	case constant.TxTypeStakeCreateValidator, constant.TxTypeStakeEditValidator:
-		fun(docTx.From)
-		break
+	delegations := helper.GetDelegations(delegator)
+	delegation := store.Coin{
+		Denom:  constant.IrisAttoUnit,
+		Amount: helper.CalculateDelegatorDelegationTokens(delegations),
 	}
 
-	logger.Info.Printf("End %v\n", methodName)
+	if err := accountModel.UpsertDelegationInfo(delegator, delegation, docTx.Height, docTx.Time.Unix()); err != nil {
+		logger.Error("update account delegation info fail", logger.Int64("height", docTx.Height),
+			logger.String("address", delegator), logger.String("err", err.Error()))
+	}
+}
+
+func SaveOrUpdateAccountUnbondingDelegationInfo(accounts []string, height, timestamp int64) {
+	var (
+		accountModel document.Account
+	)
+
+	if len(accounts) == 0 {
+		return
+	}
+	for _, v := range accounts {
+		unbondingDelegations := helper.GetUnbondingDelegations(v)
+		unbondingDelegation := store.Coin{
+			Denom:  constant.IrisAttoUnit,
+			Amount: helper.CalculateDelegatorUnbondingDelegationTokens(unbondingDelegations),
+		}
+
+		if err := accountModel.UpsertUnbondingDelegationInfo(v, unbondingDelegation, height, timestamp); err != nil {
+			logger.Error("update account unbonding delegation info fail", logger.Int64("height", height),
+				logger.String("address", v), logger.String("err", err.Error()))
+		}
+	}
+}
+
+func getCoinIrisFromCoins(coins store.Coins) store.Coin {
+	if len(coins) > 0 {
+		for _, v := range coins {
+			if v.Denom == constant.IrisAttoUnit {
+				return store.Coin{
+					Denom:  v.Denom,
+					Amount: v.Amount,
+				}
+			}
+		}
+	}
+	return store.Coin{}
 }

@@ -2,6 +2,10 @@
 
 package store
 
+const (
+	CollectionNameTxn = "mgo_txn"
+)
+
 type Docs interface {
 	// collection name
 	Name() string
@@ -17,11 +21,16 @@ type Coin struct {
 type Coins []Coin
 
 type Fee struct {
-	Amount Coins
-	Gas    int64
+	Amount Coins `json:"amount"`
+	Gas    int64 `json:"gas"`
 }
 
 type ActualFee struct {
 	Denom  string  `json:"denom"`
 	Amount float64 `json:"amount"`
+}
+
+type Msg interface {
+	Type() string
+	String() string
 }

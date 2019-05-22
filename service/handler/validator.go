@@ -1,130 +1,59 @@
 package handler
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/stake"
-	staketypes "github.com/cosmos/cosmos-sdk/x/stake/types"
-	"github.com/irisnet/irishub-sync/module/codec"
-	"github.com/irisnet/irishub-sync/module/logger"
+	"github.com/irisnet/irishub-sync/logger"
 	"github.com/irisnet/irishub-sync/store/document"
-	"github.com/irisnet/irishub-sync/util/constant"
+	"github.com/irisnet/irishub-sync/types"
 	"github.com/irisnet/irishub-sync/util/helper"
-	"github.com/tendermint/tendermint/types"
 )
 
-// compare validatorSet stored in tendermint and validatorSet stored in db
-// if tmValidatorSet not qual dbValidatorSet, execute two step as follow.
+// compare validatorSet stored in irishub and validatorSet stored in db
+// if dbCandidates not equal chainValidators, execute two step as follow.
 // first, remove all validators stored in db
 // second, store latest validators which query from sdk store into db
 // note: this function isn't thread safe, should be invoked during watch block
 //       not fast sync
-func CompareAndUpdateValidators(tmVals []*types.Validator) {
+func CompareAndUpdateValidators() {
 	var (
-		methodName     = "CompareAndUpdateValidators"
-		tmValidatorSet []string
-		dbValidatorSet []string
+		methodName = "CompareAndUpdateValidators"
 
 		candidateModel document.Candidate
-		candidates     []document.Candidate
-
-		kvs []sdk.KVPair
 	)
 
-	// get validatorSets from tendermint
-	for _, v := range tmVals {
-		tmValidatorSet = append(tmValidatorSet, v.Address.String())
+	// get all validatorSets from db
+	dbCandidates := candidateModel.QueryAll()
+
+	// get all validatorSets from blockChain
+	validators := helper.GetValidators()
+
+	logger.Debug("Get Validators from blockchain", logger.Any("Validators", validators))
+	var chainValidators []document.Candidate
+	for _, validator := range validators {
+		// build validator document struct by stake.validator
+		doc := BuildValidatorDocument(validator)
+		chainValidators = append(chainValidators, doc)
 	}
 
-	// get unRevoke validatorSets from db
-	dbVals, err := candidateModel.GetUnRevokeValidators()
-	if err != nil {
-		logger.Error.Printf("%v: err is %v\n", methodName, err)
-	}
-	for _, v := range dbVals {
-		dbValidatorSet = append(dbValidatorSet, v.PubKeyAddr)
+	if len(chainValidators) == 0 {
+		logger.Error("Validators is empty,Update Validators Failed")
+		return
 	}
 
-	// tmValidatorSet not equal storeValidatorSet
-	if !compareSlice(tmValidatorSet, dbValidatorSet) {
-		logger.Info.Printf("%v: vlidatorSet changes, tmValSet is %v, dbValSet is %v\n",
-			methodName, tmValidatorSet, dbValidatorSet)
-
+	// dbCandidates not equal chainValidators
+	if compareValidators(dbCandidates, chainValidators) {
 		// remove all data which stored in db
-		err := candidateModel.RemoveCandidates()
-		if err != nil {
-			logger.Error.Printf("%v: err is %v\n", methodName, err)
-		}
-
-		// store latest validator data
-		// get latest validators through query sdk store
-		keys := stake.ValidatorsKey
-		resRaw, err := helper.Query(keys, constant.StoreNameStake, "subspace")
-
-		if err != nil {
-			logger.Error.Printf("%v: err is %v\n", methodName, err)
-		}
-
-		codec.Cdc.MustUnmarshalBinary(resRaw, &kvs)
-		for _, v := range kvs {
-			var (
-				validator stake.Validator
-			)
-
-			addr := v.Key[1:]
-			validator, err2 := staketypes.UnmarshalValidator(codec.Cdc, addr, v.Value)
-
-			if err2 != nil {
-				logger.Error.Printf("%v: err is %v\n", methodName, err2)
-			}
-
-			// build validator document struct by stake.validator
-			doc := BuildValidatorDocument(validator)
-			candidates = append(candidates, doc)
+		if err := candidateModel.RemoveCandidates(); err != nil {
+			logger.Error("RemoveCandidates err ", logger.String("method", methodName), logger.String("err", err.Error()))
 		}
 
 		// store latest validators into db
-		err3 := candidateModel.SaveAll(candidates)
-		if err3 != nil {
-			logger.Error.Printf("%v: err is %v\n", methodName, err3)
+		if err := candidateModel.SaveAll(chainValidators); err != nil {
+			logger.Error("SaveAll", logger.String("method", methodName), logger.String("err", err.Error()))
 		}
-	} else {
-		logger.Info.Printf("%v: validatorSet not change\n", methodName)
 	}
 }
 
-func compareSlice(a, b []string) bool {
-	if a == nil && b == nil {
-		return true
-	}
-
-	if a == nil || b == nil {
-		return false
-	}
-
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i := range b {
-		if !sliceContains(a, b[i]) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// contains method for a slice
-func sliceContains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
-}
-
-func BuildValidatorDocument(v stake.Validator) document.Candidate {
+func BuildValidatorDocument(v types.StakeValidator) document.Candidate {
 	description := document.ValDescription{
 		Moniker:  v.Description.Moniker,
 		Identity: v.Description.Identity,
@@ -132,25 +61,78 @@ func BuildValidatorDocument(v stake.Validator) document.Candidate {
 		Details:  v.Description.Details,
 	}
 
-	floatTokens, _ := v.Tokens.Float64()
-	floatDelegatorShares, _ := v.DelegatorShares.Float64()
-	pubKey, err := sdk.Bech32ifyValPub(v.PubKey)
+	floatTokens := helper.ParseFloat(v.Tokens.String())
+	floatDelegatorShares := helper.ParseFloat(v.DelegatorShares.String())
+	pubKey, err := types.Bech32ifyValPub(v.ConsPubKey)
 	if err != nil {
-		logger.Error.Printf("Can't get validator pubKey, validator is %v:\n", v)
+		logger.Error("Can't get validator pubKey", logger.String("pubKey", pubKey), logger.String("err", err.Error()))
 	}
 	doc := document.Candidate{
-		Address:         v.Owner.String(),
+		Address:         v.OperatorAddr.String(),
 		PubKey:          pubKey,
-		PubKeyAddr:      v.PubKey.Address().String(),
-		Revoked:         v.Revoked,
+		PubKeyAddr:      v.ConsPubKey.Address().String(),
+		Jailed:          v.Jailed,
 		Tokens:          floatTokens,
-		OriginalTokens:  v.Tokens.RatString(),
+		OriginalTokens:  helper.RoundString(v.Tokens.String(), 0),
 		DelegatorShares: floatDelegatorShares,
 		Description:     description,
 		BondHeight:      v.BondHeight,
+		Status:          types.BondStatusToString(v.Status),
 	}
 
 	doc.VotingPower = doc.Tokens
 
 	return doc
+}
+
+func compareValidators(dbVals []document.Candidate, chainVals []document.Candidate) bool {
+	//Candidate数量不一致
+	if len(dbVals) != len(chainVals) {
+		logger.Info("Candidate's member amount has changed", logger.Int("db", len(dbVals)), logger.Int("blockchain", len(chainVals)))
+		return true
+	}
+
+	chainValsMap := make(map[string]document.Candidate)
+	for _, v := range chainVals {
+		chainValsMap[v.PubKeyAddr] = v
+	}
+
+	for _, v := range dbVals {
+		v1, ok := chainValsMap[v.PubKeyAddr]
+		if !ok {
+			logger.Info("Candidate's member has changed,removed",
+				logger.String("dbValue", v.PubKeyAddr),
+			)
+			return true
+		}
+
+		if v.Tokens != v1.Tokens {
+			logger.Info("Candidate's votingPower has changed",
+				logger.String("validator", v.Address),
+				logger.Float64("dbTokens", v1.Tokens),
+				logger.Float64("tmTokens", v1.Tokens),
+			)
+			return true
+		}
+
+		if v.Jailed != v1.Jailed {
+			logger.Info("Candidate's jailed status has changed",
+				logger.String("validator", v.Address),
+				logger.Bool("dbJailed", v.Jailed),
+				logger.Bool("tmJailed", v1.Jailed),
+			)
+			return true
+		}
+
+		if v.Status != v1.Status {
+			logger.Info("Candidate's status has changed",
+				logger.String("validator", v.Address),
+				logger.String("dbStatus", v.Status),
+				logger.String("tmStatus", v1.Status),
+			)
+			return true
+		}
+	}
+	logger.Info("Validators Set is not changed ")
+	return false
 }

@@ -5,102 +5,77 @@ package helper
 
 import (
 	"errors"
-	conf "github.com/irisnet/irishub-sync/conf/server"
-
-	"github.com/irisnet/irishub-sync/module/logger"
-	"github.com/tendermint/tendermint/rpc/client"
+	"fmt"
+	"github.com/irisnet/irishub-sync/logger"
+	"github.com/irisnet/irishub-sync/types"
+	"time"
 )
 
 type Client struct {
-	Client client.Client
-	used   bool
-	id     int64
+	types.Client
+	Id string
 }
 
-type ClientPool struct {
-	clients        []Client
-	available      int64
-	used           int64
-	maxConnection  int64
-	initConnection int64
-}
-
-var pool = ClientPool{}
-
-// init clientPool
-// while init a client, available which is a var of clientPool should +1
-func InitClientPool() {
-	pool.maxConnection = int64(conf.MaxConnectionNum)
-	initConnectionNum := int64(conf.InitConnectionNum)
-	pool.initConnection = initConnectionNum
-
-	pool.clients = make([]Client, initConnectionNum)
-	for i := int64(0); i < initConnectionNum; i++ {
-		createConnection(i)
+func newClient(addr string) *Client {
+	return &Client{
+		Client: types.NewHTTP(addr, "/websocket"),
+		Id:     generateId(addr),
 	}
 }
 
 // get client from pool
-// while get a client from pool, available should -1, used should +1
-func GetClient() Client {
-	c, err := getClient()
-	if err != nil {
-		logger.Error.Fatalln(err.Error())
+func GetClient() *Client {
+
+	c, err := pool.BorrowObject(ctx)
+	for err != nil {
+		logger.Error("GetClient failed,will try again after 3 seconds", logger.String("err", err.Error()))
+		time.Sleep(3 * time.Second)
+		c, err = pool.BorrowObject(ctx)
 	}
-	return c
+
+	logger.Debug("current available connection", logger.Int("Num", pool.GetNumIdle()))
+	logger.Debug("current used connection", logger.Int("Num", pool.GetNumActive()))
+	return c.(*Client)
+}
+
+func GetClientWithTimeout(timeout time.Duration) (*Client, error) {
+
+	c := make(chan interface{})
+	errCh := make(chan error)
+	go func() {
+		client, err := pool.BorrowObject(ctx)
+		if err != nil {
+			errCh <- err
+		} else {
+			c <- client
+		}
+	}()
+	select {
+	case res := <-c:
+		return res.(*Client), nil
+	case res := <-errCh:
+		return nil, res
+	case <-time.After(timeout):
+		return nil, errors.New("rpc node timeout")
+	}
 }
 
 // release client
-func (n Client) Release() {
-	n.used = false
-	pool.clients[n.id] = n
-	pool.available++
-	pool.used--
+func (c *Client) Release() {
+	err := pool.ReturnObject(ctx, c)
+	if err != nil {
+		logger.Debug("debug=======================Release err=======================debug")
+		logger.Error(err.Error())
+	}
+	logger.Debug("debug=======================Release return=======================debug")
 }
 
-func createConnection(id int64) Client {
-	tmClient := Client{
-		Client: client.NewHTTP(conf.BlockChainMonitorUrl, "/websocket"),
-		used:   false,
-		id:     id,
-	}
-	
-	if id == int64(len(pool.clients)) {
-		newSlice := make([]Client, pool.maxConnection)
-		for i, v := range pool.clients {
-			newSlice[i] = v
-		}
-		pool.clients = newSlice
-	}
-	pool.clients[id] = tmClient
-	pool.available++
-	return tmClient
+func (c *Client) HeartBeat() error {
+	http := c.Client.(*types.HTTP)
+	_, err := http.Health()
+	return err
 }
 
-func getClient() (Client, error) {
-	if pool.available == 0 {
-		maxConnNum := int64(conf.MaxConnectionNum)
-		if pool.used < maxConnNum {
-			var tmClient Client
-			length := len(pool.clients)
-			for i := int64(length); i < maxConnNum; i++ {
-				tmClient = createConnection(i)
-			}
-			return tmClient, nil
-		} else {
-			logger.Error.Fatalln("client pool has no available connection")
-		}
-	}
-
-	for _, tmClient := range pool.clients {
-		if !tmClient.used {
-			tmClient.used = true
-			pool.clients[tmClient.id] = tmClient
-			pool.available--
-			pool.used++
-			logger.Info.Printf("current available coonection ：%d\n", pool.available)
-			return tmClient, nil
-		}
-	}
-	return Client{}, errors.New("pool is empty")
+func generateId(address string) string {
+	return fmt.Sprintf("peer[%s]", address)
 }

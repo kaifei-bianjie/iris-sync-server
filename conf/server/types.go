@@ -3,70 +3,64 @@ package server
 import (
 	"os"
 	"strconv"
+	"strings"
 
-	"github.com/irisnet/irishub-sync/module/logger"
+	"github.com/irisnet/irishub-sync/logger"
 	"github.com/irisnet/irishub-sync/util/constant"
 )
 
 var (
-	BlockChainMonitorUrl = "tcp://127.0.0.1:26657"
-	ChainId              = "rainbow-dev"
-	Token                = "iris"
+	BlockChainMonitorUrl = []string{"tcp://35.201.147.145:30657"}
+	ChainId              = "fuxi"
 
-	InitConnectionNum   = 100              // fast init num of tendermint client pool
-	MaxConnectionNum    = 1000             // max size of tendermint client pool
-	CronWatchBlock      = "0-59 * * * * *" // every seconds
-	CronCalculateUpTime = "0 */1 * * * *"  // every minute
-	CronCalculateTxGas  = "0 */5 * * * *"  // every five minute
+	WorkerNumCreateTask  = 2
+	WorkerNumExecuteTask = 60
 
-	SyncMaxGoroutine     = 60   // max go routine in server
-	SyncBlockNumFastSync = 8000 // sync block num each goroutine
+	InitConnectionNum  = 50              // fast init num of tendermint client pool
+	MaxConnectionNum   = 100             // max size of tendermint client pool
+	SyncProposalStatus = "0 */1 * * * *" // every minute
+
+	Network = "testnet"
 )
 
 // get value of env var
 func init() {
-	nodeUrl, found := os.LookupEnv(constant.EnvNameSerNetworkNodeUrl)
+	nodeUrl, found := os.LookupEnv(constant.EnvNameSerNetworkFullNode)
 	if found {
-		BlockChainMonitorUrl = nodeUrl
-		logger.Info.Printf("The value of env var %v is %v\n",
-			constant.EnvNameSerNetworkNodeUrl, nodeUrl)
+		BlockChainMonitorUrl = strings.Split(nodeUrl, ",")
 	}
+
+	logger.Info("Env Value", logger.Any(constant.EnvNameSerNetworkFullNode, BlockChainMonitorUrl))
 
 	chainId, found := os.LookupEnv(constant.EnvNameSerNetworkChainId)
 	if found {
 		ChainId = chainId
-		logger.Info.Printf("The value of env var %v is %v\n",
-			constant.EnvNameSerNetworkChainId, chainId)
 	}
+	logger.Info("Env Value", logger.String(constant.EnvNameSerNetworkChainId, ChainId))
 
-	token, found := os.LookupEnv(constant.EnvNameSerNetworkToken)
-	if found {
-		Token = token
-		logger.Info.Printf("The value of env var %v is %v\n",
-			constant.EnvNameSerNetworkToken, token)
-	}
-
-	maxGoroutine, found := os.LookupEnv(constant.EnvNameSerMaxGoRoutine)
+	workerNumCreateTask, found := os.LookupEnv(constant.EnvNameWorkerNumCreateTask)
 	if found {
 		var err error
-		SyncMaxGoroutine, err = strconv.Atoi(maxGoroutine)
+		WorkerNumCreateTask, err = strconv.Atoi(workerNumCreateTask)
 		if err != nil {
-			logger.Error.Fatalf("Convert str to int failed, env var is %v\n",
-				constant.EnvNameSerMaxGoRoutine)
+			logger.Fatal("Can't convert str to int", logger.String(constant.EnvNameWorkerNumCreateTask, workerNumCreateTask))
 		}
-		logger.Info.Printf("The value of env var %v is %v\n",
-			constant.EnvNameSerMaxGoRoutine, maxGoroutine)
 	}
+	logger.Info("Env Value", logger.Int(constant.EnvNameWorkerNumCreateTask, WorkerNumCreateTask))
 
-	syncBlockNum, found := os.LookupEnv(constant.EnvNameSerSyncBlockNum)
+	workerNumExecuteTask, found := os.LookupEnv(constant.EnvNameWorkerNumExecuteTask)
 	if found {
 		var err error
-		SyncBlockNumFastSync, err = strconv.Atoi(syncBlockNum)
+		WorkerNumExecuteTask, err = strconv.Atoi(workerNumExecuteTask)
 		if err != nil {
-			logger.Error.Fatalf("Convert str to int failed, env var is %v\n",
-				constant.EnvNameSerSyncBlockNum)
+			logger.Fatal("Can't convert str to int", logger.String(constant.EnvNameWorkerNumExecuteTask, workerNumCreateTask))
 		}
-		logger.Info.Printf("The value of env var %v is %v\n",
-			constant.EnvNameSerSyncBlockNum, SyncBlockNumFastSync)
 	}
+	logger.Info("Env Value", logger.Int(constant.EnvNameWorkerNumExecuteTask, WorkerNumExecuteTask))
+
+	network, found := os.LookupEnv(constant.EnvNameNetwork)
+	if found {
+		Network = network
+	}
+	logger.Info("Env Value", logger.String(constant.EnvNameNetwork, network))
 }
