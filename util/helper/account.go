@@ -3,51 +3,43 @@
 package helper
 
 import (
-	"github.com/irisnet/irishub-sync/logger"
+	"github.com/irisnet/irishub-sync/module/codec"
 	"github.com/irisnet/irishub-sync/store"
-	"github.com/irisnet/irishub-sync/types"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/auth"
+	authcmd "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
+	"github.com/irisnet/irishub-sync/module/logger"
 	"github.com/irisnet/irishub-sync/util/constant"
 )
 
 // query account balance from sdk store
-func QueryAccountInfo(address string) (store.Coins, uint64) {
-	cdc := types.GetCodec()
-
-	addr, err := types.AccAddressFromBech32(address)
+func QueryAccountBalance(address string) store.Coins {
+	addr, err := sdk.AccAddressFromBech32(address)
 	if err != nil {
-		logger.Error("get addr from hex failed", logger.Any("err", err))
-		return nil, 0
+		logger.Error.Printf("get addr from hex failed, %+v\n", err)
+		return nil
 	}
 
-	res, err := Query(types.AddressStoreKey(addr), "acc",
+	res, err := Query(auth.AddressStoreKey(addr), "acc",
 		constant.StoreDefaultEndPath)
 
 	if err != nil {
-		logger.Error("Query balance from tendermint failed", logger.Any("err", err))
-		return nil, 0
+		logger.Error.Printf("Query balance from tendermint failed, %+v\n", err)
+		return nil
 	}
 
 	// balance is empty
 	if len(res) <= 0 {
-		return nil, 0
+		return nil
 	}
 
-	decoder := types.GetAccountDecoder(cdc)
+	decoder := authcmd.GetAccountDecoder(codec.Cdc)
 	account, err := decoder(res)
 	if err != nil {
-		logger.Error("decode account failed", logger.Any("err", err))
-		return nil, 0
+		logger.Error.Printf("decode account failed, %+v\n", err)
+		return nil
 	}
 
-	return types.ParseCoins(account.GetCoins().String()), account.GetAccountNumber()
-}
-
-func ValAddrToAccAddr(address string) (accAddr string) {
-	valAddr, err := types.ValAddressFromBech32(address)
-	if err != nil {
-		logger.Error("ValAddressFromBech32 decode account failed", logger.String("address", address))
-		return
-	}
-
-	return types.AccAddress(valAddr.Bytes()).String()
+	return BuildCoins(account.GetCoins())
 }

@@ -1,4 +1,4 @@
-FROM alpine:3.8
+FROM alpine:edge
 
 # Set up dependencies
 ENV PACKAGES go make git libc-dev bash
@@ -35,5 +35,4 @@ RUN apk add --no-cache $PACKAGES && \
 VOLUME ["$LOG_DIR"]
 
 
-#CMD irishub-sync > $LOG_DIR/debug.log && tail -f $LOG_DIR/debug.log
-CMD irishub-sync
+CMD irishub-sync > $LOG_DIR/debug.log && tail -f $LOG_DIR/debug.log

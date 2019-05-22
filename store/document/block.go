@@ -9,8 +9,6 @@ import (
 
 const (
 	CollectionNmBlock = "block"
-
-	Block_Field_Height = "height"
 )
 
 type Block struct {
@@ -21,7 +19,6 @@ type Block struct {
 	Meta       BlockMeta    `bson:"meta"`
 	Block      BlockContent `bson:"block"`
 	Validators []Validator  `bson:"validators"`
-	Result     BlockResults `bson:"results"`
 }
 
 type BlockMeta struct {
@@ -100,71 +97,12 @@ type Validator struct {
 	Accum       int64  `bson:"accum"`
 }
 
-type BlockResults struct {
-	DeliverTx  []ResponseDeliverTx `bson:"deliver_tx"`
-	EndBlock   ResponseEndBlock    `bson:""end_block""`
-	BeginBlock ResponseBeginBlock  `bson:""begin_block""`
-}
-
-type ResponseDeliverTx struct {
-	Code      uint32   `bson:"code"`
-	Data      string   `bson:"data"`
-	Log       string   `bson:"log"`
-	Info      string   `bson:"info"`
-	GasWanted int64    `bson:"gas_wanted"`
-	GasUsed   int64    `bson:"gas_used"`
-	Tags      []KvPair `bson:"tags"`
-}
-
-type ResponseEndBlock struct {
-	ValidatorUpdates      []ValidatorUpdate `bson:"validator_updates"`
-	ConsensusParamUpdates ConsensusParams   `bson:"consensus_param_updates"`
-	Tags                  []KvPair          `bson:"tags"`
-}
-
-type ValidatorUpdate struct {
-	PubKey string `bson:"pub_key"`
-	Power  int64  `bson:"power"`
-}
-
-type ConsensusParams struct {
-	BlockSize BlockSizeParams `bson:"block_size"`
-	Evidence  EvidenceParams  `bson:"evidence"`
-	Validator ValidatorParams `bson:"validator"`
-}
-
-type ValidatorParams struct {
-	PubKeyTypes []string `bson:"pub_key_types`
-}
-
-type BlockSizeParams struct {
-	MaxBytes int64 `bson:"max_bytes"`
-	MaxGas   int64 `bson:"max_gas"`
-}
-
-type EvidenceParams struct {
-	MaxAge int64 `bson:"max_age"`
-}
-
-type BlockGossip struct {
-	BlockPartSizeBytes int32 `bson:"block_part_size_bytes"`
-}
-
-type ResponseBeginBlock struct {
-	Tags []KvPair `bson:"tags"`
-}
-
-type KvPair struct {
-	Key   string `bson:"key"`
-	Value string `bson:"value"`
-}
-
 func (d Block) Name() string {
 	return CollectionNmBlock
 }
 
 func (d Block) PkKvPair() map[string]interface{} {
-	return bson.M{Block_Field_Height: d.Height}
+	return bson.M{"height": d.Height}
 }
 
 type ResValidatorPreCommits struct {
@@ -178,7 +116,7 @@ func (d Block) CalculateValidatorPreCommit(startBlock, endBlock int64) ([]ResVal
 	query := []bson.M{
 		{
 			"$match": bson.M{
-				Block_Field_Height: bson.M{"$gt": startBlock, "$lte": endBlock},
+				"height": bson.M{"$gt": startBlock, "$lte": endBlock},
 			},
 		},
 		{
@@ -208,20 +146,4 @@ func (d Block) CalculateValidatorPreCommit(startBlock, endBlock int64) ([]ResVal
 	}
 
 	return res, nil
-}
-
-func (d Block) GetMaxBlockHeight() (int64, error) {
-	var result struct {
-		Height int64 `bson:"height`
-	}
-
-	getMaxBlockHeightFn := func(c *mgo.Collection) error {
-		return c.Find(nil).Select(bson.M{"height": 1}).Sort("-height").Limit(1).One(&result)
-	}
-
-	if err := store.ExecCollection(d.Name(), getMaxBlockHeightFn); err != nil {
-		return result.Height, err
-	}
-
-	return result.Height, nil
 }

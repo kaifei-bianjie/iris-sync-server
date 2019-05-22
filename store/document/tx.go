@@ -2,6 +2,7 @@ package document
 
 import (
 	"github.com/irisnet/irishub-sync/store"
+	"github.com/irisnet/irishub-sync/util/constant"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"time"
@@ -9,36 +10,26 @@ import (
 
 const (
 	CollectionNmCommonTx = "tx_common"
-	TxStatusSuccess      = "success"
-	TxStatusFail         = "fail"
-
-	Tx_Field_Hash   = "tx_hash"
-	Tx_Field_Type   = "type"
-	Tx_Field_Status = "status"
 )
 
 type CommonTx struct {
-	Time       time.Time         `bson:"time"`
-	Height     int64             `bson:"height"`
-	TxHash     string            `bson:"tx_hash"`
-	From       string            `bson:"from"`
-	To         string            `bson:"to"`
-	Amount     store.Coins       `bson:"amount"`
-	Type       string            `bson:"type"`
-	Fee        store.Fee         `bson:"fee"`
-	Memo       string            `bson:"memo"`
-	Status     string            `bson:"status"`
-	Code       uint32            `bson:"code"`
-	Log        string            `bson:"log"`
-	GasUsed    int64             `bson:"gas_used"`
-	GasPrice   float64           `bson:"gas_price"`
-	ActualFee  store.ActualFee   `bson:"actual_fee"`
-	ProposalId uint64            `bson:"proposal_id"`
-	Tags       map[string]string `bson:"tags"`
+	Time      time.Time       `bson:"time"`
+	Height    int64           `bson:"height"`
+	TxHash    string          `bson:"tx_hash"`
+	From      string          `bson:"from"`
+	To        string          `bson:"to"`
+	Amount    store.Coins     `bson:"amount"`
+	Type      string          `bson:"type"`
+	Fee       store.Fee       `bson:"fee"`
+	Memo      string          `bson:"memo"`
+	Status    string          `bson:"status"`
+	Log       string          `bson:"log"`
+	GasUsed   int64           `bson:"gas_used"`
+	GasPrice  float64         `bson:"gas_price"`
+	ActualFee store.ActualFee `bson:"actual_fee"`
 
 	StakeCreateValidator StakeCreateValidator `bson:"stake_create_validator"`
 	StakeEditValidator   StakeEditValidator   `bson:"stake_edit_validator"`
-	Msg                  store.Msg            `bson:"-"`
 }
 
 // Description
@@ -63,7 +54,7 @@ func (d CommonTx) Name() string {
 }
 
 func (d CommonTx) PkKvPair() map[string]interface{} {
-	return bson.M{Tx_Field_Hash: d.TxHash}
+	return bson.M{"tx_hash": d.TxHash}
 }
 
 func (d CommonTx) Query(query, fields bson.M, sort []string, skip, limit int) (
@@ -77,8 +68,8 @@ func (d CommonTx) Query(query, fields bson.M, sort []string, skip, limit int) (
 func (d CommonTx) CalculateTxGasAndGasPrice(txType string, limit int) (
 	[]CommonTx, error) {
 	query := bson.M{
-		Tx_Field_Type:   txType,
-		Tx_Field_Status: TxStatusSuccess,
+		"type":   txType,
+		"status": constant.TxStatusSuccess,
 	}
 	fields := bson.M{}
 	sort := []string{"-height"}
